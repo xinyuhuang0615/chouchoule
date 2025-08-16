@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>荷蘭小任務戳戳樂</title>
+    <style>
+        /* --- 顏色修改點 --- */
+        :root {
+            --board-bg: #fdf5e6;
+            --bear-color: #D2B48C; /* 改為淺咖啡色 (tan) */
+            --bear-border: #a0522d; /* 邊框搭配暖棕色 (sienna) */
+            --hole-punched-bg: #d6dbdf;
+            --text-color: white;
+            --modal-bg: rgba(0, 0, 0, 0.7);
+            --prize-bg: #fffde7;
+            --prize-border: #fbc02d;
+        }
+
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #34495e;
+            background-image: url('background.png');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 15px;
+            box-sizing: border-box;
+        }
+
+        .game-container {
+            width: 100%;
+            max-width: 500px;
+            text-align: center;
+            background-color: rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            border-radius: 20px;
+        }
+
+        h1 {
+            color: white;
+            margin-bottom: 10px;
+        }
+        
+        #daily-message {
+            color: white;
+            font-size: 1.1rem;
+            font-weight: bold;
+            min-height: 25px;
+            margin-bottom: 15px;
+            /* --- 修改點：移除狀態文字陰影 --- */
+            /* text-shadow: 2px 2px 4px rgba(0,0,0,0.6); */
+        }
+
+        .board {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            background-color: var(--board-bg);
+            border: 10px solid var(--bear-border);
+            border-radius: 15px;
+            padding: 15px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+            transition: opacity 0.5s;
+        }
+
+        .board.disabled {
+            opacity: 0.6;
+        }
+        .board.disabled .hole {
+            cursor: not-allowed;
+        }
+
+        .hole {
+            aspect-ratio: 1 / 1;
+            background-color: var(--bear-color);
+            border: 3px solid var(--bear-border);
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: var(--text-color);
+            text-shadow: 1px 1px 3px rgba(0,0,0,0.5);
+            transition: all 0.2s;
+            user-select: none;
+            position: relative;
+        }
+        
+        .hole::before, .hole::after {
+            content: '';
+            position: absolute;
+            width: 40%;
+            height: 40%;
+            background-color: inherit;
+            border: 3px solid var(--bear-border);
+            border-radius: 50%;
+            top: -15%;
+            z-index: -1;
+        }
+
+        .hole::before {
+            left: -10%;
+        }
+
+        .hole::after {
+            right: -10%;
+        }
+
+        .hole:not(.punched):hover {
+            transform: scale(1.05);
+        }
+
+        .hole.punched {
+            background-color: var(--hole-punched-bg);
+            border-radius: 8px;
+            color: #7f8c8d;
+            text-shadow: none;
+        }
+
+        .hole.punched::before, .hole.punched::after {
+            display: none;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed; z-index: 1000; left: 0; top: 0;
+            width: 100%; height: 100%;
+            background-color: var(--modal-bg);
+            justify-content: center; align-items: center;
+        }
+
+        .prize-note {
+            background-color: var(--prize-bg);
+            border: 5px dashed var(--prize-border);
+            padding: 40px 30px; border-radius: 10px;
+            text-align: center; width: 80%; max-width: 350px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.4);
+            transform: scale(0.5); opacity: 0;
+            transition: transform 0.3s ease-out, opacity 0.3s ease-out;
+        }
+        
+        .modal.visible .prize-note {
+            transform: scale(1); opacity: 1;
+        }
+
+        .prize-note h2 {
+            margin: 0 0 15px 0; color: #d35400;
+        }
+
+        .prize-note p {
+            font-size: 1.5rem; margin: 0; color: #333;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="game-container">
+        <h1>荷蘭小任務戳戳樂</h1>
+        <div id="daily-message"></div>
+        <div class="board" id="board"></div>
+    </div>
+
+    <div class="modal" id="prize-modal">
+        <div class="prize-note">
+            <h2 id="task-title">今日任務：</h2>
+            <p id="prize-text"></p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const TOTAL_HOLES = 12;
+            const board = document.getElementById('board');
+            const prizeModal = document.getElementById('prize-modal');
+            const prizeText = document.getElementById('prize-text');
+            const dailyMessage = document.getElementById('daily-message');
+
+            const TASK_POOL = [
+                "找一座遊樂園坐旋轉木馬", "到梵谷博物館裡拍一張最喜歡的畫",
+                "去海尼根博物館喝三杯！", "找一個女生朋友一起去參觀紅燈區博物館",
+                "去莫瑞泰斯皇家美術館跟戴珍珠耳環的少女拍照", "去逛起司市集",
+                "跟海牙和平宮拍一張照", "到隔壁德國的Kaufland買一個小點心",
+                "搭火車去德國邊境小鎮 Kleve", "探訪荷蘭的ikea餐廳 找一個台灣沒有的食物來吃",
+                "找一個simcity裡也有的建築跟他合照(國家不限！)", "找一間類似麻辣香鍋的店來吃"
+            ];
+
+            let punchedStatus = [];
+            let holeTasks = [];
+
+            function shuffle(array) {
+                for (let i = array.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [array[i], array[j]] = [array[j], array[i]];
+                }
+                return array;
+            }
+
+            function setupGame() {
+                const savedStatus = localStorage.getItem('punchedStatus_NL');
+                const savedTasks = localStorage.getItem('holeTasks_NL');
+
+                if (savedStatus && savedTasks) {
+                    punchedStatus = JSON.parse(savedStatus);
+                    holeTasks = JSON.parse(savedTasks);
+                    if (punchedStatus.length !== TOTAL_HOLES) {
+                        resetGameData();
+                    }
+                } else {
+                    resetGameData();
+                }
+                
+                renderBoard();
+                checkDailyPlay();
+            }
+            
+            function checkDailyPlay() {
+                const lastPlayDate = localStorage.getItem('lastPlayDate_NL');
+                const today = new Date().toDateString();
+
+                if (lastPlayDate === today) {
+                    dailyMessage.textContent = '今天已經戳過了，明天再來吧！';
+                    board.classList.add('disabled');
+                } else {
+                    dailyMessage.textContent = '點選一個小熊來獲得今日任務！';
+                    board.classList.remove('disabled');
+                }
+            }
+            
+            function markAsPlayedToday() {
+                const today = new Date().toDateString();
+                localStorage.setItem('lastPlayDate_NL', today);
+            }
+
+            function resetGameData() {
+                punchedStatus = new Array(TOTAL_HOLES).fill(false);
+                holeTasks = shuffle([...TASK_POOL]).slice(0, TOTAL_HOLES);
+                saveProgress();
+            }
+
+            function renderBoard() {
+                board.innerHTML = '';
+                for (let i = 0; i < TOTAL_HOLES; i++) {
+                    const hole = document.createElement('div');
+                    hole.classList.add('hole');
+                    hole.dataset.index = i;
+                    hole.textContent = i + 1;
+
+                    if (punchedStatus[i]) {
+                        hole.classList.add('punched');
+                        hole.textContent = ' ';
+                    }
+                    board.appendChild(hole);
+                }
+            }
+
+            function saveProgress() {
+                localStorage.setItem('punchedStatus_NL', JSON.stringify(punchedStatus));
+                localStorage.setItem('holeTasks_NL', JSON.stringify(holeTasks));
+            }
+
+            function showPrize(index) {
+                prizeText.textContent = holeTasks[index];
+                prizeModal.style.display = 'flex';
+                setTimeout(() => {
+                    prizeModal.classList.add('visible');
+}, 10); 
+            }
+
+            board.addEventListener('click', (e) => {
+                const hole = e.target.closest('.hole');
+                
+                if (!hole || board.classList.contains('disabled') || hole.classList.contains('punched')) {
+                    return;
+                }
+
+                const index = parseInt(hole.dataset.index);
+                
+                hole.classList.add('punched');
+                hole.textContent = ' ';
+                punchedStatus[index] = true;
+                
+                markAsPlayedToday();
+                saveProgress();
+                checkDailyPlay();
+
+                setTimeout(() => {
+                    showPrize(index);
+                }, 300);
+            });
+
+
+
+            prizeModal.addEventListener('click', () => {
+                prizeModal.classList.remove('visible');
+                setTimeout(() => {
+                    prizeModal.style.display = 'none';
+                }, 300);
+            });
+
+            setupGame();
+        });
+    </script>
+</body>
+</html>
